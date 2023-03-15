@@ -2,7 +2,8 @@
 // Created by maros on 15.3.2023.
 //
 
-#include <iostream>
+#include <string.h>
+#include <zlib.h>
 #include <libpak/libpak.hpp>
 
 int main()
@@ -11,7 +12,11 @@ int main()
       "/run/media/maros/windows_data/maros/games/Alicia/res.pak"
       );
     resource.read(true);
-    printf("test");
+
+
+    for(auto& asset : resource) {
+      printf("asset: %ls\n", asset.first.cbegin());
+    }
 
 
     return 0;

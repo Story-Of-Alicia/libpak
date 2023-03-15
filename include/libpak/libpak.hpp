@@ -14,36 +14,24 @@
 
 namespace libpak {
 
+  using asset_entry = std::pair<std::wstring_view, libpak::asset>;
+  using asset_map = std::unordered_map<std::wstring_view, libpak::asset>;
+
   /**
    * Represents a single resource which holds assets and their accompanying data.
    */
   class resource {
-  private:
-    std::string_view resourcePath;
-
-  protected:
-    std::shared_ptr<std::ifstream> input_stream;
-    std::shared_ptr<std::ofstream> output_stream;
-
-  protected:
-    libpak::pak_header pak_header;
-    libpak::content_header content_header;
-    libpak::data_header data_header;
-
-    std::unordered_map<std::wstring_view, libpak::asset> asset_index;
-
   public:
     /**
      * Default constructor.
      * @param path Path to resource.
      * @param create Whether to create the resource.
      */
-    explicit resource(std::string_view path,
-                      bool create = true)
-        : resourcePath(path) {
-              if(create)
-                this->create();
-          };
+    explicit resource(std::string_view path, bool create = true) : resourcePath(path)
+    {
+      if(create)
+        this->create();
+    };
 
   public:
     /**
@@ -72,13 +60,36 @@ namespace libpak {
     void destroy() noexcept;
 
     /**
-     * Get asset by its identifier.
-     * @param asset_id Identifier of the asset.
-     * @param data Whether to read it's data to memory.
-     * @return Reference to asset.
+     * @param name Asset id
+     * @return Asset reference
      */
-    asset& get_asset(const std::wstring_view& asset_id,
-                 bool data = false);
+    inline libpak::asset& operator[](const std::wstring_view& name) {
+      return this->asset_index.at(name);
+    }
+
+    /**
+     * @return Asset iterator beginning
+     */
+    inline asset_map::const_iterator begin() const noexcept { return this->asset_index.begin(); }
+
+    /**
+     * @return Asset iterator end
+     */
+    inline asset_map::const_iterator end() const noexcept { return this->asset_index.end(); }
+
+  private:
+    std::string_view resourcePath;
+
+  protected:
+    std::shared_ptr<std::ifstream> input_stream;
+    std::shared_ptr<std::ofstream> output_stream;
+
+  protected:
+    libpak::pak_header pak_header;
+    libpak::content_header content_header;
+    libpak::data_header data_header;
+
+    asset_map asset_index;
   };
 
 } // namespace libpak

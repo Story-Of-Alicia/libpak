@@ -40,43 +40,46 @@ void read_data(std::ifstream& stream, libpak::asset asset)
   if(!header.is_asset_embedded)
     return;
 
-  uint64_t bufferSize = header.is_data_compressed
-                        ? header.embedded_data_length
-                        : header.data_decompressed_length;
-
+  // allocate embedded data buffer
+  uint64_t embeddedSize = asset.header.embedded_data_length;
+  std::shared_ptr<uint8_t> embeddedData(nullptr);
   try {
-    data.buffer.reset(new uint8_t[bufferSize]);
-  } catch(std::bad_alloc& alloc) {
-    throw std::logic_error("not enough memory for data buffer");
+    embeddedData.reset(new uint8_t[embeddedSize]);
   }
-
-  // return unprocessed data if not compressed
-  if(!header.is_data_compressed)
-    if(!::read(stream, data.buffer, bufferSize))
-      throw std::logic_error("couldn't read embedded data");
+  catch(std::bad_alloc& alloc) {
+    throw std::logic_error("not enough memory for embedded buffer");
+  }
 
   // store origin offset
   auto origin = stream.tellg();
 
-  // jump to data and read
-  uint64_t compressedSize = header.embedded_data_length;
-  std::shared_ptr<uint8_t> compressedData(nullptr);
-  try {
-    compressedData.reset(new uint8_t[compressedSize]);
-  } catch(std::bad_alloc& alloc) {
-    throw std::logic_error("not enough memory for compressed buffer");
-  }
-
-  if(!::read(stream, compressedData, compressedSize, header.embedded_data_offset))
-    throw std::logic_error("couldn't read compressed embedded data");
+  // read embedded data
+  if(!::read(stream, embeddedData, embeddedSize, header.embedded_data_offset))
+    throw std::logic_error("couldn't read embedded data");
 
   // restore origin offset
   stream.seekg(origin, std::ios::beg);
 
-  uint64_t destinationLength = header.data_decompressed_length;
+  // if data is not compressed, return the unprocessed buffer
+  if(!header.is_data_compressed) {
+    asset.data.buffer = embeddedData;
+    return;
+  }
+
+  // npak can compress small buffers and inflate them
+  // we have to use the largest data length there is for the data
+  uint64_t dataSize = std::max(header.embedded_data_length,
+                               header.data_decompressed_length);
+  // allocate buffer for data
+  try {
+    data.buffer.reset(new uint8_t[dataSize]);
+  }
+  catch(std::bad_alloc& alloc) {
+    throw std::logic_error("not enough memory for data buffer");
+  }
+
   // uncompress
-  auto result = uncompress2(data.buffer.get(),&destinationLength,
-                            compressedData.get(), &compressedSize);
+  auto result = uncompress2(data.buffer.get(), &dataSize, embeddedData.get(), &embeddedSize);
   switch(result) {
   case Z_BUF_ERROR:
   case Z_MEM_ERROR:
@@ -146,9 +149,4 @@ void libpak::resource::destroy() noexcept
   this->content_header = {};
   this->data_header = {};
   this->asset_index.clear();
-}
-
-libpak::asset& libpak::resource::get_asset(const std::wstring_view& asset_id, bool data)
-{
-  return this->asset_index[asset_id];
 }
