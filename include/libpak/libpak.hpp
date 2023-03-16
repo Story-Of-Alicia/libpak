@@ -14,8 +14,7 @@
 
 namespace libpak {
 
-  using asset_entry = std::pair<std::wstring_view, libpak::asset>;
-  using asset_map = std::unordered_map<std::wstring_view, libpak::asset>;
+  using asset_map = std::unordered_map<std::u16string_view, libpak::asset>;
 
   /**
    * Represents a single resource which holds assets and their accompanying data.
@@ -35,18 +34,39 @@ namespace libpak {
 
   public:
     /**
-     * Read the whole resource and write it to memory.
-     * @param data Whether to read the data.
-     * @return True if successful, false if failed.
+     * Reads the resource and indexes the assets.
+     * @param data Whether to read the data of the indexed assets.
+     * @throws std::runtime_error
      */
-    bool read(bool data = false);
+    void read(bool data = false);
 
     /**
-     * Write the resource to persistent memory.
-     * @param cleanup Whether to cleanup memory after.
-     * @return True if successful, false if failed.
+     * Reads asset from the resource.
+     * @param asset Indexed asset.
+     * @param data  Whether to read the asset data.
+     * @throws std::runtime_error
      */
-    bool write(bool cleanup = false);
+    void read_asset(asset& asset, bool data = false);
+
+    /**
+     * Reads asset data from the resource.
+     * @param asset Indexed asset.
+     * @return True if asset data were read.
+     * @throws std::runtime_error
+     */
+    void read_asset_data(asset& asset);
+
+    /**
+     * Writes the assets to the resource.
+     * @param patch Whether to write only modified assets.
+     * @param data  Whether to write asset data.
+     * @throws std::runtime_error
+     */
+    void write(bool patch = true, bool data = true);
+
+
+    void write_asset(const libpak::asset& asset, bool data = true);
+    void write_asset_data(const libpak::asset& asset);
 
     /**
      * Create the resource file descriptors.
@@ -60,22 +80,13 @@ namespace libpak {
     void destroy() noexcept;
 
     /**
-     * @param name Asset id
-     * @return Asset reference
+     * @param name Asset ID.
+     * @return Indexed asset.
      */
-    inline libpak::asset& operator[](const std::wstring_view& name) {
-      return this->asset_index.at(name);
+    inline libpak::asset& operator[](const std::u16string_view & name) {
+      return this->assets.at(name);
     }
 
-    /**
-     * @return Asset iterator beginning
-     */
-    inline asset_map::const_iterator begin() const noexcept { return this->asset_index.begin(); }
-
-    /**
-     * @return Asset iterator end
-     */
-    inline asset_map::const_iterator end() const noexcept { return this->asset_index.end(); }
 
   private:
     std::string_view resourcePath;
@@ -89,7 +100,8 @@ namespace libpak {
     libpak::content_header content_header;
     libpak::data_header data_header;
 
-    asset_map asset_index;
+  public:
+    asset_map assets;
   };
 
 } // namespace libpak

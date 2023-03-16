@@ -45,7 +45,7 @@ namespace libpak
     uint32_t first_magic{}; // FILS
     uint32_t second_magic{}; // FILZ
 
-    uint32_t asset_count{};
+    uint32_t assets_count{};
   };
 
   /**
@@ -84,7 +84,7 @@ namespace libpak
     uint32_t checksum_decompressed{};
     uint32_t checksum_embedded{};
     uint32_t unknown6{};
-    wchar_t path[128]{};
+    char16_t path[256]{};
   };
 
   /**
@@ -115,7 +115,7 @@ namespace libpak
     /**
      * @return String view of path.
      */
-    std::wstring_view path() {
+    std::u16string_view path() {
       return header.path;
     }
   };

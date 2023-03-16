@@ -26,7 +26,7 @@ add_library(libpak
         include/libpak/libpak.hpp
         src/libpak/libpak.cpp
         include/libpak/definitions.hpp
-        include/libpak/algorithms.hpp)
+        include/libpak/algorithms.hpp include/libpak/util.hpp)
 target_include_directories(libpak
         PUBLIC include)
 target_link_libraries(libpak

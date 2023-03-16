@@ -8,6 +8,7 @@
 #include <cstdio>
 #include <stdexcept>
 
+#include "libpak/util.hpp"
 #include "libpak/libpak.hpp"
 #include "libpak/algorithms.hpp"
 
@@ -33,7 +34,7 @@ bool read(
   return !stream.fail();
 }
 
-void read_data(std::ifstream& stream, libpak::asset asset)
+void read_data(std::ifstream& stream, libpak::asset& asset)
 {
   auto& header = asset.header;
   auto& data = asset.data;
@@ -47,18 +48,21 @@ void read_data(std::ifstream& stream, libpak::asset asset)
     embeddedData.reset(new uint8_t[embeddedSize]);
   }
   catch(std::bad_alloc& alloc) {
-    throw std::logic_error("not enough memory for embedded buffer");
+    throw std::runtime_error("not enough memory for embedded buffer");
   }
 
   // store origin offset
   auto origin = stream.tellg();
+  libpak::util::defer defer([&stream, &origin](){
+    // restore origin offset
+    stream.seekg(origin, std::ios::beg);
+  });
 
   // read embedded data
   if(!::read(stream, embeddedData, embeddedSize, header.embedded_data_offset))
-    throw std::logic_error("couldn't read embedded data");
+    throw std::runtime_error("couldn't read embedded data");
 
-  // restore origin offset
-  stream.seekg(origin, std::ios::beg);
+
 
   // if data is not compressed, return the unprocessed buffer
   if(!header.is_data_compressed) {
@@ -67,7 +71,7 @@ void read_data(std::ifstream& stream, libpak::asset asset)
   }
 
   // npak can compress small buffers and inflate them
-  // we have to use the largest data length there is for the data
+  // due to this, the largest data length has to be chosen for the uncompressed data buffer
   uint64_t dataSize = std::max(header.embedded_data_length,
                                header.data_decompressed_length);
   // allocate buffer for data
@@ -75,7 +79,7 @@ void read_data(std::ifstream& stream, libpak::asset asset)
     data.buffer.reset(new uint8_t[dataSize]);
   }
   catch(std::bad_alloc& alloc) {
-    throw std::logic_error("not enough memory for data buffer");
+    throw std::runtime_error("not enough memory for data buffer");
   }
 
   // uncompress
@@ -83,58 +87,88 @@ void read_data(std::ifstream& stream, libpak::asset asset)
   switch(result) {
   case Z_BUF_ERROR:
   case Z_MEM_ERROR:
-    throw std::logic_error("not enough memory for uncompressed data");
+    throw std::runtime_error("not enough memory for uncompressed data");
   case Z_DATA_ERROR:
-    throw std::logic_error("corrupted compressed data");
+    throw std::runtime_error("corrupted compressed data");
   default: {
   }; break;
   }
 }
 
-bool libpak::resource::read(bool data)
+void libpak::resource::read(bool data)
 {
-
   // read the pak header
   auto& input = *this->input_stream;
+  if(input.fail())
+    throw std::runtime_error("failed to read the resource file");
+
   if(!::read(input, this->pak_header))
-    throw std::logic_error("failed to read pak header");
+    throw std::runtime_error("failed to read pak header");
 
   // read the content header
   if(!::read(input, this->content_header, PAK_ASSETS_ADDR))
-    throw std::logic_error("failed to read content header");
+    throw std::runtime_error("failed to read content header");
 
   // reserve the size of asset count
-  this->asset_index.reserve(this->content_header.asset_count);
+  this->assets.reserve(this->content_header.assets_count);
 
-  int hitCount = 0;
+  uint32_t registeredAssetCount = content_header.assets_count;
+  uint32_t assetCount = 0;
+  uint32_t deletedAssetCount = 0;
+
   // read the assets
-  for(;;) {
-    // read the header
-    libpak::asset asset{};
-    if(!::read(input, asset.header))
-      throw std::logic_error("failed to read asset header");
-
-    // break if there are no assets are left
-    if(asset.header.asset_magic == 0x0)
-      break;
-    this->asset_index[asset.path()] = asset;
-    hitCount++;
-
-    // continue if data shouldn't be loaded
-    if(!data)
-      continue;
-
+  for(uint32_t assetIndex{0}; assetIndex < registeredAssetCount; assetIndex++) {
     try {
-      ::read_data(input, asset);
-    }
-    catch(const std::logic_error& err) {
-      throw std::logic_error(fmt::format("couldn't process data for asset: {}", err.what()));
+      libpak::asset asset;
+      // read asset
+      this->read_asset(asset, data);
+
+      assetCount++;
+      if(asset.header.is_asset_deleted)
+        deletedAssetCount++;
+
+      if(registeredAssetCount == assetCount)
+        printf("aa\n");
+
+      this->assets[asset.path()] = asset;
+    } catch(const std::runtime_error& e)
+    {
+      throw std::runtime_error(fmt::format("failed to read asset: {}", e.what()));
     }
   }
-
-  return true;
 }
-bool libpak::resource::write(bool cleanup) { return false; }
+
+void libpak::resource::read_asset(libpak::asset& asset,
+                                  bool data) {
+  auto& input = *this->input_stream;
+
+  // read asset header
+  if(!::read(input, asset.header, asset.header.asset_offset))
+    throw std::runtime_error("failed to read asset header");
+
+  // handle invalid asset
+  if(asset.header.asset_magic == 0x0)
+    throw std::runtime_error("invalid asset header read");
+
+  if(data) {
+    try {
+      this->read_asset_data(asset);
+    }
+    catch(const std::runtime_error& err) {
+      throw std::runtime_error(fmt::format("failed read asset data: {}", err.what()));
+    }
+  }
+}
+
+void libpak::resource::read_asset_data(libpak::asset& asset) {
+  auto& input = *this->input_stream;
+  ::read_data(input, asset);
+}
+
+void libpak::resource::write(bool patch, bool data) { }
+
+void libpak::resource::write_asset(const libpak::asset& asset, bool data) {}
+void libpak::resource::write_asset_data(const libpak::asset& asset) {}
 
 void libpak::resource::create()
 {
@@ -148,5 +182,5 @@ void libpak::resource::destroy() noexcept
   this->pak_header = {};
   this->content_header = {};
   this->data_header = {};
-  this->asset_index.clear();
+  this->assets.clear();
 }

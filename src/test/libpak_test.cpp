@@ -2,8 +2,6 @@
 // Created by maros on 15.3.2023.
 //
 
-#include <string.h>
-#include <zlib.h>
 #include <libpak/libpak.hpp>
 
 int main()
@@ -11,11 +9,14 @@ int main()
     libpak::resource resource(
       "/run/media/maros/windows_data/maros/games/Alicia/res.pak"
       );
-    resource.read(true);
+    resource.read();
 
-
-    for(auto& asset : resource) {
-      printf("asset: %ls\n", asset.first.cbegin());
+    for(auto& pair : resource.assets) {
+      auto& asset = pair.second;
+      std::u16string t(asset.header.path);
+      if(t.find(u"libconfig") != std::wstring::npos) {
+        resource.read_asset_data(asset);
+      }
     }
 
 
