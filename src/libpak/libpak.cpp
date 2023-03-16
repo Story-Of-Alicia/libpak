@@ -62,8 +62,6 @@ void read_data(std::ifstream& stream, libpak::asset& asset)
   if(!::read(stream, embeddedData, embeddedSize, header.embedded_data_offset))
     throw std::runtime_error("couldn't read embedded data");
 
-
-
   // if data is not compressed, return the unprocessed buffer
   if(!header.is_data_compressed) {
     asset.data.buffer = embeddedData;
@@ -112,25 +110,18 @@ void libpak::resource::read(bool data)
   // reserve the size of asset count
   this->assets.reserve(this->content_header.assets_count);
 
-  uint32_t registeredAssetCount = content_header.assets_count;
-  uint32_t assetCount = 0;
-  uint32_t deletedAssetCount = 0;
+  const uint32_t registeredAssetCount = content_header.assets_count;
 
   // read the assets
   for(uint32_t assetIndex{0}; assetIndex < registeredAssetCount; assetIndex++) {
     try {
       libpak::asset asset;
+
       // read asset
       this->read_asset(asset, data);
-
-      assetCount++;
-      if(asset.header.is_asset_deleted)
-        deletedAssetCount++;
-
-      if(registeredAssetCount == assetCount)
-        printf("aa\n");
-
+      // index asset
       this->assets[asset.path()] = asset;
+
     } catch(const std::runtime_error& e)
     {
       throw std::runtime_error(fmt::format("failed to read asset: {}", e.what()));
@@ -172,7 +163,7 @@ void libpak::resource::write_asset_data(const libpak::asset& asset) {}
 
 void libpak::resource::create()
 {
-  this->input_stream = std::make_shared<std::ifstream>(this->resourcePath.cbegin(), std::ios_base::binary);
+  this->input_stream = std::make_shared<std::ifstream>(this->resource_path, std::ios_base::binary);
 }
 
 void libpak::resource::destroy() noexcept
@@ -184,3 +175,4 @@ void libpak::resource::destroy() noexcept
   this->data_header = {};
   this->assets.clear();
 }
+

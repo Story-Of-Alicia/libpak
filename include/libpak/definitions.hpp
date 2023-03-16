@@ -108,16 +108,33 @@ namespace libpak
    */
   struct asset {
   public:
+    /**
+     * Asset header
+     */
     asset_header header{};
+
+    /**
+     * Asset data
+     */
     asset_data data{};
-    bool changed = false;
+
   public:
     /**
-     * @return String view of path.
+     * @return String view of the asset path.
      */
     std::u16string_view path() {
       return header.path;
     }
+
+    /**
+     * Mark the asset as patched.
+     */
+    void markAsPatched() {
+      this->patched = true;
+    }
+
+  private:
+    bool patched = false;
   };
 
 #pragma pack(pop)

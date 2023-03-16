@@ -11,7 +11,7 @@ namespace libpak {
   namespace alg {
 
     /**
-     * Calculate buffer's alicia checksum.
+     * Perform alicia checksum on a buffer.
      * @param buffer Buffer
      * @param length Length
      * @return Checksum
