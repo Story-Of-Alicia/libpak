@@ -25,10 +25,11 @@ bool libpak::stream::read(uint8_t* buffer,
     origin = this->source->tellg();
     this->source->seekg(offset, dir);
   }
+
   this->source->read(reinterpret_cast<char*>(buffer), size);
   if(origin != 0)
     this->source->seekg(origin);
-
+  
   return this->source->good();
 }
 
@@ -52,21 +53,70 @@ bool libpak::stream::write(const uint8_t* buffer,
   return this->sink->good();
 }
 
+int64_t libpak::stream::set_writer_cursor(int64_t pos,
+                                          std::ios::seekdir dir) {
+  if(this->sink == nullptr)
+    return -1;
+  auto origin = get_writer_cursor();
+  this->sink->seekp(pos, dir);
+  return origin;
+}
+
+int64_t libpak::stream::get_writer_cursor() {
+  if(this->sink == nullptr)
+    return -1;
+  return this->sink->tellp();
+}
+
+int64_t libpak::stream::set_reader_cursor(int64_t pos,
+                                          std::ios::seekdir dir) {
+  if(this->source == nullptr)
+    return -1;
+  auto origin = get_reader_cursor();
+  this->source->seekg(pos, dir);
+  return origin;
+}
+
+
+int64_t libpak::stream::get_reader_cursor() {
+  if(this->source == nullptr)
+    return -1;
+  return this->source->tellg();
+}
+
+
 libpak::stream::stream(const std::shared_ptr<std::istream>& source,
                        const std::shared_ptr<std::ostream>& sink)
     : source(source), sink(sink)
 {
 }
 
+void libpak::resource::create()
+{
+  // input stream
+  this->input_stream = std::make_shared<std::ifstream>(this->resource_path,
+                                                       std::ios::binary);
+
+  // resource stream wrapper
+  this->resource_stream = std::make_shared<libpak::stream>(this->input_stream,
+                                                           this->output_stream);
+}
+
 
 void libpak::resource::read(bool data)
 {
+  // reset to known state
+  {
+    this->resource_stream->set_reader_cursor(0);
+  }
+
   // read the pak header
   if(!this->resource_stream->read(this->pak_header))
     throw std::runtime_error("failed to read pak header");
 
   // read the content header
-  if(!this->resource_stream->read(this->content_header, PAK_ASSETS_ADDR))
+  this->resource_stream->set_reader_cursor(PAK_CONTENT_SECTOR);
+  if(!this->resource_stream->read(this->content_header))
     throw std::runtime_error("failed to read content header");
 
   // reserve the size of asset count
@@ -94,12 +144,14 @@ void libpak::resource::read(bool data)
 
 void libpak::resource::read_asset(libpak::asset& asset,
                                   bool data) {
+
+  auto& header = asset.header;
   // read asset header
-  if(!this->resource_stream->read(asset.header, asset.header.asset_offset))
+  if(!this->resource_stream->read(header, header.asset_offset))
     throw std::runtime_error("failed to read asset header");
 
   // handle invalid asset
-  if(asset.header.asset_magic == 0x0)
+  if(header.asset_magic == 0x0)
     throw std::runtime_error("invalid asset header read");
 
   if(data) {
@@ -165,17 +217,16 @@ void libpak::resource::read_asset_data(libpak::asset& asset) {
   }
 }
 
-void libpak::resource::write(bool patch, bool data) { }
+void libpak::resource::write(bool patch, bool data) {
+  // reset to known state
+  {
+    this->resource_stream->set_writer_cursor(0);
+  }
+}
 
 void libpak::resource::write_asset(const libpak::asset& asset, bool data) {}
 void libpak::resource::write_asset_data(const libpak::asset& asset) {}
 
-void libpak::resource::create()
-{
-  this->input_stream = std::make_shared<std::ifstream>(this->resource_path, std::ios::binary);
-  this->output_stream = std::make_shared<std::ofstream>(this->resource_path, std::ios::binary);
-  this->resource_stream = std::make_shared<libpak::stream>(this->input_stream, this->output_stream);
-}
 
 void libpak::resource::destroy() noexcept
 {

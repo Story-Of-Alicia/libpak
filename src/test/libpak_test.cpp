@@ -11,8 +11,23 @@ struct Dummy {
 
 int main(int argc, char** argv)
 {
+//    auto write = std::make_shared<std::ofstream>("test.binary", std::ios::binary);
+//    auto read = std::make_shared<std::ifstream>("test.binary", std::ios::binary);
+//    auto stream = libpak::stream(read, write);
+//    {
+//      auto d = Dummy{5,5};
+//      stream.write(d);
+//    }
+//    write->flush();
+//    {
+//      auto d = Dummy{0,0};
+//      if(!stream.read(d))
+//        printf("a");
+//      else
+//        printf("b");
+//    }
 
-  libpak::resource resource("/run/media/maros/windows_data/maros/games/Alicia/res.pak");
+  libpak::resource resource("res.pak");
   resource.read();
 
   for(auto& pair : resource.assets) {

@@ -15,8 +15,8 @@ namespace libpak
 
 #pragma pack(push, 1)
 
-  static constexpr size_t PAK_ASSETS_ADDR = 0x7D000;
-  static constexpr size_t PAK_DATA_ADDR = 0xF00000;
+  static constexpr size_t PAK_CONTENT_SECTOR = 0x7D000;
+  static constexpr size_t PAK_DATA_SECTOR = 0xF00000;
 
   /**
    * Represents pak header.

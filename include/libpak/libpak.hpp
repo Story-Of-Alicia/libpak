@@ -23,7 +23,7 @@ namespace libpak {
   class stream {
   public:
     /**
-     * Reads buffer from stream source.
+     * Reads buffer from stream source. If offset is specified
      * @param buffer Buffer.
      * @param size   Buffer size.
      * @param offset Offset.
@@ -34,7 +34,7 @@ namespace libpak {
     bool read(uint8_t* buffer, int64_t size, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg);
 
     /**
-     * Reads blob from stream source.
+     * Reads blob from stream source
      * @tparam Blob  Blob type.
      * @param blob   Blob.
      * @param offset Offset.
@@ -42,7 +42,7 @@ namespace libpak {
      * @return True if reading was successful, otherwise returns false.
      */
     template<typename Blob>
-    inline bool read(Blob& blob, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg) {
+    bool read(Blob& blob, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg) {
       return read(reinterpret_cast<uint8_t*>(&blob), sizeof blob, offset, dir);
     }
 
@@ -66,9 +66,36 @@ namespace libpak {
      * @return True if writing was successful, otherwise returns false.
      */
     template<typename Blob>
-    inline bool write(Blob& blob, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg) {
+    bool write(Blob& blob, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg) {
       return write(reinterpret_cast<uint8_t*>(&blob), sizeof blob, offset, dir);
     }
+
+    /**
+     * Sets writer cursor position.
+     * @param pos Position.
+     * @param dir Direction.
+     * @return Previous writer cursor position.
+     */
+    int64_t set_writer_cursor(int64_t pos, std::ios::seekdir dir = std::ios::beg);
+
+    /**
+     * @return Current writer cursor position.
+     */
+    int64_t get_writer_cursor();
+
+    /**
+     * Sets reader cursor position.
+     * @param pos Position.
+     * @param dir Direction.
+     * @return Previous reader cursor position.
+     */
+    int64_t set_reader_cursor(int64_t pos, std::ios::seekdir dir = std::ios::beg);
+
+    /**
+     * @return Current reader cursor position.
+     */
+    int64_t get_reader_cursor();
+
 
   public:
     /**
