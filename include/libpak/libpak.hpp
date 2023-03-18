@@ -18,6 +18,79 @@ namespace libpak {
   using asset_map = std::unordered_map<std::u16string_view, libpak::asset>;
 
   /**
+   * Provides encapsulation for read and write operations on streams.
+   */
+  class stream {
+  public:
+    /**
+     * Reads buffer from stream source.
+     * @param buffer Buffer.
+     * @param size   Buffer size.
+     * @param offset Offset.
+     * @param dir    Offset direction.
+     * @throws std::runtime_exception when stream source is not available
+     * @returns True if reading was successful, otherwise returns false.
+     */
+    bool read(uint8_t* buffer, int64_t size, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg);
+
+    /**
+     * Reads blob from stream source.
+     * @tparam Blob  Blob type.
+     * @param blob   Blob.
+     * @param offset Offset.
+     * @param dir    Offset direction.
+     * @return True if reading was successful, otherwise returns false.
+     */
+    template<typename Blob>
+    inline bool read(Blob& blob, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg) {
+      return read(reinterpret_cast<uint8_t*>(&blob), sizeof blob, offset, dir);
+    }
+
+    /**
+     * Writes buffer to stream sink.
+     * @param buffer Buffer.
+     * @param size   Buffer size.
+     * @param offset Offset.
+     * @param dir    Offset direction.
+     * @throws std::runtime_exception when stream sink is not available
+     * @returns True if writing was successful, otherwise returns false.
+     */
+    bool write(const uint8_t* buffer, int64_t size, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg);
+
+    /**
+     * Writes blob to stream sink.
+     * @tparam Blob  Blob type.
+     * @param blob   Blob.
+     * @param offset Offset.
+     * @param dir    Offset direction.
+     * @return True if writing was successful, otherwise returns false.
+     */
+    template<typename Blob>
+    inline bool write(Blob& blob, int64_t offset = 0, std::ios::seekdir dir = std::ios::beg) {
+      return write(reinterpret_cast<uint8_t*>(&blob), sizeof blob, offset, dir);
+    }
+
+  public:
+    /**
+     * Construct stream with source and sink streams.
+     * @param source Source (input).
+     * @param sink   Sink (output).
+     */
+    stream(const std::shared_ptr<std::istream>& source,
+           const std::shared_ptr<std::ostream>& sink);
+
+  public:
+    /**
+     * Resource source stream.
+     */
+    std::shared_ptr<std::istream> source;
+
+    /**
+     * Resource sink stream.
+     */
+    std::shared_ptr<std::ostream> sink;
+  };
+  /**
    * Represents a single resource which holds assets and their accompanying data.
    */
   class resource {
@@ -27,7 +100,7 @@ namespace libpak {
      * @param path Path to resource.
      * @param create Whether to create the resource.
      */
-    explicit resource(std::string path, bool create = true) : resource_path(std::move(path))
+    explicit resource(std::string path, bool create = true): resource_path(std::move(path))
     {
       if(create)
         this->create();
@@ -94,26 +167,13 @@ namespace libpak {
      * @param name Asset name.
      * @return Indexed asset.
      */
-    inline libpak::asset& operator[](const std::u16string_view & name) {
-      return this->assets.at(name);
-    }
+    inline libpak::asset& operator[](const std::u16string_view& name) { return this->assets.at(name); }
 
   public:
     /**
      * Path to resource.
      */
     const std::string resource_path;
-
-  public:
-    /**
-     * Resource input stream.
-     */
-    std::shared_ptr<std::ifstream> input_stream;
-
-    /**
-     * Resource output stream.
-     */
-    std::shared_ptr<std::ofstream> output_stream;
 
   public:
     /**
@@ -135,6 +195,24 @@ namespace libpak {
      * Map of all assets indexed by their name.
      */
     asset_map assets;
+
+
+  public:
+    /**
+     * Resource stream.
+     */
+    std::shared_ptr<libpak::stream> resource_stream;
+
+    /**
+     * Resource input stream.
+     */
+    std::shared_ptr<std::ifstream> input_stream;
+
+    /**
+     * Resource output stream.
+     */
+    std::shared_ptr<std::ofstream> output_stream;
+
   };
 
 } // namespace libpak

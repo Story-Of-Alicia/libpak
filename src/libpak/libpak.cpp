@@ -12,37 +12,116 @@
 #include "libpak/libpak.hpp"
 #include "libpak/algorithms.hpp"
 
-template <typename T>
-bool read(std::ifstream& stream, T& header, int64_t offset = 0, std::ios::seekdir seekdir = std::ios::beg)
-{
-  if(offset != 0)
-    stream.seekg(offset, seekdir);
-  stream.read(reinterpret_cast<char*>(&header), sizeof(header));
-  return !stream.fail();
+
+bool libpak::stream::read(uint8_t* buffer,
+                          int64_t size,
+                          int64_t offset,
+                          std::ios::seekdir dir) {
+  if(this->source == nullptr || this->source->fail())
+    throw std::runtime_error("stream source is not available");
+
+  int64_t origin = 0;
+  if(offset != 0) {
+    origin = this->source->tellg();
+    this->source->seekg(offset, dir);
+  }
+  this->source->read(reinterpret_cast<char*>(buffer), size);
+  if(origin != 0)
+    this->source->seekg(origin);
+
+  return this->source->good();
 }
 
-bool read(
-    std::ifstream& stream,
-    std::shared_ptr<uint8_t> data,
-    int64_t size,
-    int64_t offset = 0,
-    std::ios::seekdir seekdir = std::ios::beg)
-{
-  if(offset != 0)
-    stream.seekg(offset, seekdir);
-  stream.read(reinterpret_cast<char*>(data.get()), size);
-  return !stream.fail();
+bool libpak::stream::write(const uint8_t* buffer,
+                           int64_t size,
+                           int64_t offset,
+                           std::ios::seekdir dir) {
+  if(this->sink == nullptr)
+    throw std::runtime_error("stream sink is not available");
+
+  int64_t origin = 0;
+  if(offset != 0) {
+    origin = this->sink->tellp();
+    this->sink->seekp(offset, dir);
+  }
+
+  this->sink->write(reinterpret_cast<const char*>(buffer), size);
+  if(origin != 0)
+    this->sink->seekp(origin);
+
+  return this->sink->good();
 }
 
-void read_data(std::ifstream& stream, libpak::asset& asset)
+libpak::stream::stream(const std::shared_ptr<std::istream>& source,
+                       const std::shared_ptr<std::ostream>& sink)
+    : source(source), sink(sink)
 {
+}
+
+
+void libpak::resource::read(bool data)
+{
+  // read the pak header
+  if(!this->resource_stream->read(this->pak_header))
+    throw std::runtime_error("failed to read pak header");
+
+  // read the content header
+  if(!this->resource_stream->read(this->content_header, PAK_ASSETS_ADDR))
+    throw std::runtime_error("failed to read content header");
+
+  // reserve the size of asset count
+  this->assets.reserve(this->content_header.assets_count);
+
+  const uint32_t registeredAssetCount
+      = content_header.assets_count;
+
+  // read the assets
+  for(uint32_t assetIndex{0}; assetIndex < registeredAssetCount; assetIndex++) {
+    try {
+      libpak::asset asset;
+
+      // read asset
+      this->read_asset(asset, data);
+      // index asset
+      this->assets[asset.path()] = asset;
+
+    } catch(const std::runtime_error& e)
+    {
+      throw std::runtime_error(fmt::format("failed to read asset: {}", e.what()));
+    }
+  }
+}
+
+void libpak::resource::read_asset(libpak::asset& asset,
+                                  bool data) {
+  // read asset header
+  if(!this->resource_stream->read(asset.header, asset.header.asset_offset))
+    throw std::runtime_error("failed to read asset header");
+
+  // handle invalid asset
+  if(asset.header.asset_magic == 0x0)
+    throw std::runtime_error("invalid asset header read");
+
+  if(data) {
+    try {
+      this->read_asset_data(asset);
+    }
+    catch(const std::runtime_error& err) {
+      throw std::runtime_error(fmt::format("failed read asset data: {}", err.what()));
+    }
+  }
+}
+
+void libpak::resource::read_asset_data(libpak::asset& asset) {
   auto& header = asset.header;
   auto& data = asset.data;
   if(!header.is_asset_embedded)
     return;
 
-  // allocate embedded data buffer
   uint64_t embeddedSize = asset.header.embedded_data_length;
+  uint64_t embeddedDataOffset = header.embedded_data_offset;
+
+  // allocate embedded data buffer
   std::shared_ptr<uint8_t> embeddedData(nullptr);
   try {
     embeddedData.reset(new uint8_t[embeddedSize]);
@@ -51,15 +130,8 @@ void read_data(std::ifstream& stream, libpak::asset& asset)
     throw std::runtime_error("not enough memory for embedded buffer");
   }
 
-  // store origin offset
-  auto origin = stream.tellg();
-  libpak::util::defer defer([&stream, &origin](){
-    // restore origin offset
-    stream.seekg(origin, std::ios::beg);
-  });
-
   // read embedded data
-  if(!::read(stream, embeddedData, embeddedSize, header.embedded_data_offset))
+  if(!this->resource_stream->read(embeddedData.get(), embeddedSize, embeddedDataOffset))
     throw std::runtime_error("couldn't read embedded data");
 
   // if data is not compressed, return the unprocessed buffer
@@ -93,69 +165,6 @@ void read_data(std::ifstream& stream, libpak::asset& asset)
   }
 }
 
-void libpak::resource::read(bool data)
-{
-  // read the pak header
-  auto& input = *this->input_stream;
-  if(input.fail())
-    throw std::runtime_error("failed to read the resource file");
-
-  if(!::read(input, this->pak_header))
-    throw std::runtime_error("failed to read pak header");
-
-  // read the content header
-  if(!::read(input, this->content_header, PAK_ASSETS_ADDR))
-    throw std::runtime_error("failed to read content header");
-
-  // reserve the size of asset count
-  this->assets.reserve(this->content_header.assets_count);
-
-  const uint32_t registeredAssetCount = content_header.assets_count;
-
-  // read the assets
-  for(uint32_t assetIndex{0}; assetIndex < registeredAssetCount; assetIndex++) {
-    try {
-      libpak::asset asset;
-
-      // read asset
-      this->read_asset(asset, data);
-      // index asset
-      this->assets[asset.path()] = asset;
-
-    } catch(const std::runtime_error& e)
-    {
-      throw std::runtime_error(fmt::format("failed to read asset: {}", e.what()));
-    }
-  }
-}
-
-void libpak::resource::read_asset(libpak::asset& asset,
-                                  bool data) {
-  auto& input = *this->input_stream;
-
-  // read asset header
-  if(!::read(input, asset.header, asset.header.asset_offset))
-    throw std::runtime_error("failed to read asset header");
-
-  // handle invalid asset
-  if(asset.header.asset_magic == 0x0)
-    throw std::runtime_error("invalid asset header read");
-
-  if(data) {
-    try {
-      this->read_asset_data(asset);
-    }
-    catch(const std::runtime_error& err) {
-      throw std::runtime_error(fmt::format("failed read asset data: {}", err.what()));
-    }
-  }
-}
-
-void libpak::resource::read_asset_data(libpak::asset& asset) {
-  auto& input = *this->input_stream;
-  ::read_data(input, asset);
-}
-
 void libpak::resource::write(bool patch, bool data) { }
 
 void libpak::resource::write_asset(const libpak::asset& asset, bool data) {}
@@ -163,16 +172,17 @@ void libpak::resource::write_asset_data(const libpak::asset& asset) {}
 
 void libpak::resource::create()
 {
-  this->input_stream = std::make_shared<std::ifstream>(this->resource_path, std::ios_base::binary);
+  this->input_stream = std::make_shared<std::ifstream>(this->resource_path, std::ios::binary);
+  this->output_stream = std::make_shared<std::ofstream>(this->resource_path, std::ios::binary);
+  this->resource_stream = std::make_shared<libpak::stream>(this->input_stream, this->output_stream);
 }
 
 void libpak::resource::destroy() noexcept
 {
-  this->input_stream->close();
-  this->output_stream->close();
   this->pak_header = {};
   this->content_header = {};
   this->data_header = {};
   this->assets.clear();
 }
+
 
