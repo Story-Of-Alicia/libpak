@@ -1,5 +1,6 @@
 # libpak
-libpak is platform-agnostic implementation for reading and writing in the ntreev paks format.
+libpak is library for manipulating the Ntreev PAK format
+
 Example:
 ```cpp
 #include <libpak/libpak.hpp>

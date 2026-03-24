@@ -1,0 +1,4 @@
+set(ZLIB_BUILD_TESTING OFF)
+set(ZLIB_BUILD_SHARED OFF)
+set(ZLIB_BUILD_MINIZIP OFF)
+add_subdirectory(zlib)

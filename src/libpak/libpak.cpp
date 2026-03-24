@@ -1,232 +1,419 @@
-//
-// Created by maros on 15.3.2023.
-//
+/**
+ * libpak - library for PAK manipulation
+ * Copyright (C) 2026 Story Of Alicia
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License along
+ * with this program; if not, write to the Free Software Foundation, Inc.,
+ * 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA.
+ **/
 
-#include <zlib.h>
-#include <fmt/format.h>
-
-#include <cstdio>
-#include <stdexcept>
-
-#include "libpak/util.hpp"
 #include "libpak/libpak.hpp"
 #include "libpak/algorithms.hpp"
+#include "libpak/util.hpp"
 
+#include <format>
+#include <ranges>
+#include <stdexcept>
 
-bool libpak::stream::read(uint8_t* buffer,
-                          int64_t size,
-                          int64_t offset,
-                          std::ios::seekdir dir) {
-  if(this->source == nullptr || this->source->fail())
+#include <zlib.h>
+
+namespace
+{
+
+/**
+ * Calculate buffer's alicia checksum.
+ * @param buffer Buffer
+ * @param length Length
+ * @return Checksum
+ */
+int32_t alicia_checksum(const char* buffer, uint64_t length)
+{
+  int32_t result = 0;
+  do
+  {
+    result += *buffer;
+    buffer++;
+    length--;
+  } while (length != 0);
+  return result;
+}
+
+} // namespace
+
+bool libpak::stream::read(
+  std::byte* const buffer,
+  const int64_t size,
+  const int64_t offset,
+  const std::ios::seekdir dir)
+{
+  if (this->source == nullptr || this->source->fail())
     throw std::runtime_error("stream source is not available");
 
   int64_t origin = 0;
-  if(offset != 0) {
+  if (offset != 0)
+  {
     origin = this->source->tellg();
     this->source->seekg(offset, dir);
   }
 
   this->source->read(reinterpret_cast<char*>(buffer), size);
-  if(origin != 0)
+  if (origin != 0)
     this->source->seekg(origin);
-  
+
   return this->source->good();
 }
 
-bool libpak::stream::write(const uint8_t* buffer,
-                           int64_t size,
-                           int64_t offset,
-                           std::ios::seekdir dir) {
-  if(this->sink == nullptr)
+bool libpak::stream::write(
+  uint8_t const* const buffer,
+  const int64_t size,
+  const int64_t offset,
+  const std::ios::seekdir dir)
+{
+  if (this->sink == nullptr)
     throw std::runtime_error("stream sink is not available");
 
   int64_t origin = 0;
-  if(offset != 0) {
+  if (offset != 0)
+  {
     origin = this->sink->tellp();
     this->sink->seekp(offset, dir);
   }
 
   this->sink->write(reinterpret_cast<const char*>(buffer), size);
-  if(origin != 0)
+  if (origin != 0)
     this->sink->seekp(origin);
 
   return this->sink->good();
 }
 
-int64_t libpak::stream::set_writer_cursor(int64_t pos,
-                                          std::ios::seekdir dir) {
-  if(this->sink == nullptr)
+int64_t libpak::stream::set_writer_cursor(const int64_t pos, const std::ios::seekdir dir)
+{
+  if (this->sink == nullptr)
     return -1;
-  auto origin = get_writer_cursor();
+
+  const auto origin = get_writer_cursor();
   this->sink->seekp(pos, dir);
   return origin;
 }
 
-int64_t libpak::stream::get_writer_cursor() {
-  if(this->sink == nullptr)
+int64_t libpak::stream::get_writer_cursor()
+{
+  if (this->sink == nullptr)
     return -1;
+
   return this->sink->tellp();
 }
 
-int64_t libpak::stream::set_reader_cursor(int64_t pos,
-                                          std::ios::seekdir dir) {
-  if(this->source == nullptr)
+int64_t libpak::stream::set_reader_cursor(const int64_t pos, const std::ios::seekdir dir)
+{
+  if (this->source == nullptr)
     return -1;
-  auto origin = get_reader_cursor();
+
+  const auto origin = get_reader_cursor();
   this->source->seekg(pos, dir);
   return origin;
 }
 
-
-int64_t libpak::stream::get_reader_cursor() {
-  if(this->source == nullptr)
+int64_t libpak::stream::get_reader_cursor()
+{
+  if (this->source == nullptr)
     return -1;
   return this->source->tellg();
 }
 
-
-libpak::stream::stream(const std::shared_ptr<std::istream>& source,
-                       const std::shared_ptr<std::ostream>& sink)
-    : source(source), sink(sink)
+libpak::stream::stream(
+  const std::shared_ptr<std::istream>& source,
+  const std::shared_ptr<std::ostream>& sink)
+  : source(source)
+  , sink(sink)
 {
 }
 
-void libpak::resource::create()
+void libpak::resource::create() {}
+
+void libpak::resource::read(const bool data)
 {
   // input stream
-  this->input_stream = std::make_shared<std::ifstream>(this->resource_path,
-                                                       std::ios::binary);
-
+  this->input_stream = std::make_shared<std::ifstream>(
+    this->resource_path, std::ios::binary);
   // resource stream wrapper
-  this->resource_stream = std::make_shared<libpak::stream>(this->input_stream,
-                                                           this->output_stream);
-}
+  this->resource_stream = std::make_shared<stream>(
+    this->input_stream, this->output_stream);
 
-
-void libpak::resource::read(bool data)
-{
   // reset to known state
-  {
-    this->resource_stream->set_reader_cursor(0);
-  }
+  this->resource_stream->set_reader_cursor(0);
 
-  // read the pak header
-  if(!this->resource_stream->read(this->pak_header))
+  // read the intro header
+  if (!this->resource_stream->read(this->pak_header))
     throw std::runtime_error("failed to read pak header");
 
   // read the content header
   this->resource_stream->set_reader_cursor(PAK_CONTENT_SECTOR);
-  if(!this->resource_stream->read(this->content_header))
+  if (!this->resource_stream->read(this->content_header))
     throw std::runtime_error("failed to read content header");
 
   // reserve the size of asset count
   this->assets.reserve(this->content_header.assets_count);
 
-  const uint32_t registeredAssetCount
-      = content_header.assets_count;
-
   // read the assets
-  for(uint32_t assetIndex{0}; assetIndex < registeredAssetCount; assetIndex++) {
-    try {
-      libpak::asset asset;
+  for (uint32_t assetIndex{0}; assetIndex < content_header.assets_count; assetIndex++)
+  {
+    try
+    {
+      asset asset;
 
       // read asset
-      this->read_asset(asset, data);
-      // index asset
-      this->assets[asset.path()] = asset;
+      this->read_asset_header(asset);
 
-    } catch(const std::runtime_error& e)
+      // read the asset data
+      try
+      {
+        if (data)
+          this->read_asset_data(asset);
+      }
+      catch (const std::runtime_error& err)
+      {
+        throw std::runtime_error(std::format("failed read asset data: {}", err.what()));
+      }
+
+      // index asset
+      this->assets[asset.path()] = std::move(asset);
+    }
+    catch (const std::runtime_error& e)
     {
-      throw std::runtime_error(fmt::format("failed to read asset: {}", e.what()));
+      throw std::runtime_error(std::format("failed to read asset: {}", e.what()));
     }
   }
 }
 
-void libpak::resource::read_asset(libpak::asset& asset,
-                                  bool data) {
+void libpak::resource::write()
+{
+  // input stream
+  this->output_stream = std::make_shared<std::ofstream>(
+    this->resource_path, std::ios::binary);
+  // resource stream wrapper
+  this->resource_stream = std::make_shared<stream>(
+    this->input_stream, this->output_stream);
 
+  this->resource_stream->set_writer_cursor(0);
+
+  // Update the content header
+  this->content_header.assets_count = static_cast<uint32_t>(this->assets.size());
+
+  // write the content header
+  this->resource_stream->set_writer_cursor(PAK_CONTENT_SECTOR);
+  if (!this->resource_stream->write(this->content_header))
+    throw std::runtime_error("failed to write content header");
+
+  int64_t data_offset = PAK_DATA_SECTOR;
+  for (auto& asset : this->assets | std::views::values)
+  {
+    const auto header_origin = this->resource_stream->set_writer_cursor(
+      data_offset);
+    this->write_asset_data(asset);
+
+    // Return to the asset header origin
+    this->resource_stream->set_writer_cursor(header_origin);
+
+    this->write_asset_header(asset);
+
+    // Offset the data cursor by the length of the embedded data.
+    data_offset += asset.header.embedded_data_length;
+  }
+
+  if (!this->resource_stream->write(this->data_header))
+    throw std::runtime_error("failed to write data header");
+
+  // Update the intro PAKS header assets counts
+  this->pak_header.assets_count = static_cast<uint32_t>(this->assets.size());
+  this->pak_header.used_assets_count = static_cast<uint32_t>(this->assets.size());
+  this->pak_header.deleted_assets_count = 0;
+
+  this->pak_header.file_size = static_cast<uint32_t>(
+    this->resource_stream->get_writer_cursor());
+
+  // Write the intro PAKS header
+  this->resource_stream->set_writer_cursor(0);
+  if (!this->resource_stream->write(this->pak_header))
+    throw std::runtime_error("failed to write pak header");
+
+  this->output_stream->close();
+}
+
+void libpak::resource::read_asset_header(asset& asset)
+{
   auto& header = asset.header;
   // read asset header
-  if(!this->resource_stream->read(header, header.asset_offset))
+  if (!this->resource_stream->read(header, header.header_offset))
     throw std::runtime_error("failed to read asset header");
 
   // handle invalid asset
-  if(header.asset_magic == 0x0)
+  if (header.magic == 0x0)
     throw std::runtime_error("invalid asset header read");
-
-  if(data) {
-    try {
-      this->read_asset_data(asset);
-    }
-    catch(const std::runtime_error& err) {
-      throw std::runtime_error(fmt::format("failed read asset data: {}", err.what()));
-    }
-  }
 }
 
-void libpak::resource::read_asset_data(libpak::asset& asset) {
+void libpak::resource::read_asset_data(asset& asset)
+{
   auto& header = asset.header;
   auto& data = asset.data;
-  if(!header.is_asset_embedded)
+  if (!header.are_asset_data_embedded)
     return;
 
-  uint64_t embeddedSize = asset.header.embedded_data_length;
-  uint64_t embeddedDataOffset = header.embedded_data_offset;
+  uLongf embedded_size = asset.header.embedded_data_length;
+  const int64_t embedded_data_offset = header.embedded_data_offset;
 
   // allocate embedded data buffer
-  std::shared_ptr<uint8_t> embeddedData(nullptr);
-  try {
-    embeddedData.reset(new uint8_t[embeddedSize]);
+  std::vector<std::byte> embedded_data;
+  try
+  {
+    embedded_data.resize(embedded_size);
   }
-  catch(std::bad_alloc& alloc) {
+  catch (std::bad_alloc&)
+  {
     throw std::runtime_error("not enough memory for embedded buffer");
   }
 
-  // read embedded data
-  if(!this->resource_stream->read(embeddedData.get(), embeddedSize, embeddedDataOffset))
+  // read the embedded data
+  if (!this->resource_stream->read(embedded_data.data(), embedded_size, embedded_data_offset))
     throw std::runtime_error("couldn't read embedded data");
 
   // if data is not compressed, return the unprocessed buffer
-  if(!header.is_data_compressed) {
-    asset.data.buffer = embeddedData;
+  if (not header.is_data_compressed)
+  {
+    asset.data.buffer = std::move(embedded_data);
     return;
   }
 
-  // npak can compress small buffers and inflate them
-  // due to this, the largest data length has to be chosen for the uncompressed data buffer
-  uint64_t dataSize = std::max(header.embedded_data_length,
-                               header.data_decompressed_length);
+  // NPAK can compress small buffers and inflate them. Because to this,
+  // choose the largest data size for the decompressed data buffer.
+  uLongf decompressed_data_size = std::max(
+    header.embedded_data_length,
+    header.data_decompressed_length);
+
   // allocate buffer for data
-  try {
-    data.buffer.reset(new uint8_t[dataSize]);
+  try
+  {
+    data.buffer.resize(decompressed_data_size);
   }
-  catch(std::bad_alloc& alloc) {
+  catch (std::bad_alloc&)
+  {
     throw std::runtime_error("not enough memory for data buffer");
   }
 
   // uncompress
-  auto result = uncompress2(data.buffer.get(), &dataSize, embeddedData.get(), &embeddedSize);
-  switch(result) {
-  case Z_BUF_ERROR:
-  case Z_MEM_ERROR:
-    throw std::runtime_error("not enough memory for uncompressed data");
-  case Z_DATA_ERROR:
-    throw std::runtime_error("corrupted compressed data");
-  default: {
-  }; break;
-  }
-}
+  const auto compression_result = uncompress2(
+    reinterpret_cast<Bytef*>(data.buffer.data()),
+    &decompressed_data_size,
+    reinterpret_cast<Bytef*>(embedded_data.data()),
+    &embedded_size);
 
-void libpak::resource::write(bool patch, bool data) {
-  // reset to known state
+  switch (compression_result)
   {
-    this->resource_stream->set_writer_cursor(0);
+    case Z_BUF_ERROR:
+    case Z_MEM_ERROR:
+      throw std::runtime_error("not enough memory for uncompressed data");
+    case Z_DATA_ERROR:
+      throw std::runtime_error("corrupted compressed data");
+    default:
+      {};
+      break;
   }
 }
 
-void libpak::resource::write_asset(const libpak::asset& asset, bool data) {}
-void libpak::resource::write_asset_data(const libpak::asset& asset) {}
+void libpak::resource::write_asset_header(const asset& asset)
+{
+  const auto& header = asset.header;
+  // write the asset header
+  if (!this->resource_stream->write(header))
+    throw std::runtime_error("failed to write asset header");
+}
 
+void libpak::resource::write_asset_data(libpak::asset& asset)
+{
+  if (not asset.header.are_asset_data_embedded || asset.data.buffer.empty())
+    return;
+
+  // calculate the CRC and checksum of the decompressed data.
+  const uLongf decompressed_crc = crc32(
+    0, // initial crc cycle value
+    reinterpret_cast<const Bytef*>(asset.data.buffer.data()),
+    asset.header.data_decompressed_length);
+
+  const uint32_t decompressed_checksum = alicia_checksum(
+    reinterpret_cast<const char*>(asset.data.buffer.data()),
+    asset.header.data_decompressed_length);
+
+  uLongf embedded_crc{};
+  uLongf embedded_checksum{};
+
+  asset.header.embedded_data_offset = static_cast<uint32_t>(
+    resource_stream->get_writer_cursor());
+
+  if (asset.header.is_data_compressed)
+  {
+    uLongf compressed_size = std::max(
+      asset.header.data_decompressed_length,
+      asset.header.embedded_data_length);
+
+    std::vector<std::byte> compressed_data_buffer;
+    compressed_data_buffer.resize(compressed_size);
+
+    compress2(
+      reinterpret_cast<Bytef*>(compressed_data_buffer.data()),
+      &compressed_size,
+      reinterpret_cast<Bytef*>(asset.data.buffer.data()),
+      asset.header.data_decompressed_length,
+      9 /* compression level*/);
+
+    // calculate the crc and checksum of the now compressed data
+
+    embedded_crc = crc32(
+      0, // initial crc cycle value
+      reinterpret_cast<Bytef*>(compressed_data_buffer.data()),
+      compressed_size);
+
+    embedded_checksum = alicia_checksum(
+      reinterpret_cast<const char*>(compressed_data_buffer.data()),
+      compressed_size);
+
+    // write the compressed data
+    resource_stream->write(
+      reinterpret_cast<const uint8_t*>(compressed_data_buffer.data()),
+      compressed_size);
+
+    asset.header.embedded_data_length = compressed_size;
+  }
+  else
+  {
+    // Both embedded CRC and checksums are identical.
+    embedded_crc = decompressed_crc;
+    embedded_checksum = decompressed_checksum;
+
+    // write the decompresssed data
+    resource_stream->write(
+      reinterpret_cast<const uint8_t*>(asset.data.buffer.data()),
+      asset.header.data_decompressed_length);
+
+    asset.header.embedded_data_length = asset.header.data_decompressed_length;
+  }
+
+  // update the header crcs and checksums
+
+  asset.header.crc_decompressed = decompressed_crc;
+  asset.header.checksum_decompressed = decompressed_checksum;
+  asset.header.crc_embedded = embedded_crc;
+  asset.header.checksum_embedded = embedded_checksum;
+}
 
 void libpak::resource::destroy() noexcept
 {
@@ -235,5 +422,3 @@ void libpak::resource::destroy() noexcept
   this->data_header = {};
   this->assets.clear();
 }
-
-
