@@ -21,6 +21,7 @@
 #include "libpak/algorithms.hpp"
 #include "libpak/util.hpp"
 
+#include <filesystem>
 #include <format>
 #include <ranges>
 #include <stdexcept>
@@ -29,6 +30,23 @@
 
 namespace
 {
+
+uLongf capitalized_string_crc32(const std::string& string)
+{
+  uLongf value{0};
+
+  for (char c : string)
+  {
+    c = static_cast<char>(std::toupper(c));
+
+    value = crc32(
+      value,
+      reinterpret_cast<const Bytef*>(&c),
+      sizeof(c));
+  }
+
+  return value;
+}
 
 /**
  * Calculate buffer's alicia checksum.
@@ -258,7 +276,7 @@ void libpak::resource::read_asset_header(asset& asset)
     throw std::runtime_error("failed to read asset header");
 
   // handle invalid asset
-  if (header.magic == 0x0)
+  if (header.path_length == 0x0)
     throw std::runtime_error("invalid asset header read");
 }
 
@@ -266,7 +284,7 @@ void libpak::resource::read_asset_data(asset& asset)
 {
   auto& header = asset.header;
   auto& data = asset.data;
-  if (!header.are_asset_data_embedded)
+  if (!header.are_data_embedded)
     return;
 
   uLongf embedded_size = asset.header.embedded_data_length;
@@ -288,7 +306,7 @@ void libpak::resource::read_asset_data(asset& asset)
     throw std::runtime_error("couldn't read embedded data");
 
   // if data is not compressed, return the unprocessed buffer
-  if (not header.is_data_compressed)
+  if (not header.are_data_compressed)
   {
     asset.data.buffer = std::move(embedded_data);
     return;
@@ -317,6 +335,9 @@ void libpak::resource::read_asset_data(asset& asset)
     reinterpret_cast<Bytef*>(embedded_data.data()),
     &embedded_size);
 
+  if (decompressed_data_size > data.buffer.size())
+    data.buffer.resize(decompressed_data_size);
+
   switch (compression_result)
   {
     case Z_BUF_ERROR:
@@ -330,17 +351,42 @@ void libpak::resource::read_asset_data(asset& asset)
   }
 }
 
-void libpak::resource::write_asset_header(const asset& asset)
+void libpak::resource::write_asset_header(asset& asset)
 {
-  const auto& header = asset.header;
+  auto& header = asset.header;
+
+  // update the header offset
+  header.header_offset = static_cast<uint32_t>(
+    this->resource_stream->get_writer_cursor());
+
+  const std::filesystem::path path(asset.header.path);
+
+  // update path hash
+  const auto path_string = path.string();
+  header.path_length = static_cast<uint32_t>(
+    path_string.length());
+  header.path_hash = capitalized_string_crc32(path_string);
+
+  // update filename hash
+  const std::string filename_string = path.filename().string();
+  header.filename_hash = capitalized_string_crc32(filename_string);
+
+  // update extension hash
+  const std::string extension_string = path.extension().string();
+  header.extension_hash = capitalized_string_crc32(extension_string);
+
+  // update parent path hash
+  const std::string parent_path_string = path.parent_path().string();
+  header.parent_path_hash = capitalized_string_crc32(parent_path_string);
+
   // write the asset header
   if (!this->resource_stream->write(header))
     throw std::runtime_error("failed to write asset header");
 }
 
-void libpak::resource::write_asset_data(libpak::asset& asset)
+void libpak::resource::write_asset_data(asset& asset)
 {
-  if (not asset.header.are_asset_data_embedded || asset.data.buffer.empty())
+  if (not asset.header.are_data_embedded || asset.data.buffer.empty())
     return;
 
   // calculate the CRC and checksum of the decompressed data.
@@ -359,7 +405,7 @@ void libpak::resource::write_asset_data(libpak::asset& asset)
   asset.header.embedded_data_offset = static_cast<uint32_t>(
     resource_stream->get_writer_cursor());
 
-  if (asset.header.is_data_compressed)
+  if (asset.header.are_data_compressed)
   {
     uLongf compressed_size = std::max(
       asset.header.data_decompressed_length,

@@ -69,13 +69,13 @@ struct content_header
 struct asset_header
 {
   uint32_t prefix{};
-  uint32_t magic{};
+  uint32_t path_length{};
 
   uint32_t embedded_data_offset{};
   uint32_t embedded_data_length{};
 
   uint32_t data_decompressed_length{};
-  uint32_t is_data_compressed{};
+  uint32_t are_data_compressed{};
   uint32_t data_decompressed_length0{};
   uint32_t unknown0{};
   uint32_t data_decompressed_length1{};
@@ -87,7 +87,7 @@ struct asset_header
   uint32_t parent_path_hash{};
   uint32_t is_asset_deleted{};
   uint32_t header_offset{};
-  uint32_t are_asset_data_embedded{};
+  uint32_t are_data_embedded{};
 
   uint32_t unknown_type_l{};
   uint32_t unknown_type_h{};

@@ -189,7 +189,7 @@ public:
    * @param asset Asset.
    * @throws std::runtime_error
    */
-  void write_asset_header(const asset& asset);
+  void write_asset_header(asset& asset);
 
   /**
    * Writes the asset's data.
