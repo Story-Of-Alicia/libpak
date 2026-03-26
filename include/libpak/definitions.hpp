@@ -89,14 +89,14 @@ struct asset_header
   uint32_t header_offset{};
   uint32_t are_data_embedded{};
 
-  uint32_t unknown_type_l{};
+  uint32_t unknown_type_l{0x534946};
   uint32_t unknown_type_h{};
   uint32_t date_created{};
   uint32_t time_created{};
 
   uint32_t crc_decompressed{};
   uint32_t crc_embedded{};
-  uint32_t crc_identity{};
+  uint32_t crc_identity{0x32435243};
   uint32_t checksum_decompressed{};
   uint32_t checksum_embedded{};
   uint32_t unknown6{};
