@@ -389,6 +389,9 @@ void libpak::resource::write_asset_data(asset& asset)
   if (not asset.header.are_data_embedded || asset.data.buffer.empty())
     return;
 
+  asset.header.data_decompressed_length = static_cast<uint32_t>(
+      asset.data.buffer.size());
+
   // calculate the CRC and checksum of the decompressed data.
   const uLongf decompressed_crc = crc32(
     0, // initial crc cycle value
