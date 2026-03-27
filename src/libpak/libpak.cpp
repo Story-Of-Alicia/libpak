@@ -363,8 +363,9 @@ void libpak::resource::write_asset_header(asset& asset)
 
   // update path hash
   const auto path_string = path.string();
+  // path length includes the zero terminator
   header.path_length = static_cast<uint32_t>(
-    path_string.length());
+    path_string.length() + 1);
   header.path_hash = capitalized_string_crc32(path_string);
 
   // update filename hash
